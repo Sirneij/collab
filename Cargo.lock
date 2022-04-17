@@ -70,6 +70,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "collab"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "serde",
  "serde_json",
  "tokio",
@@ -375,6 +376,7 @@ checksum = "327fa5b6a6940e4699ec49a9beae1ea4845c6bab9314e4f84ac68742139d8c53"
 dependencies = [
  "autocfg",
  "scopeguard",
+ "serde",
 ]
 
 [[package]]
