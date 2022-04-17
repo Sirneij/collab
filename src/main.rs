@@ -9,9 +9,19 @@ use warp::{
 };
 
 #[derive(Debug)]
-struct InvalidID;
-impl Reject for InvalidID {}
-
+enum CustomError {
+    ParseError(std::num::ParseIntError),
+    MissingParameters,
+}
+impl std::fmt::Display for CustomError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            CustomError::ParseError(ref err) => write!(f, "Cannot parse parameter: {}", err),
+            CustomError::MissingParameters => write!(f, "Missing parameter"),
+        }
+    }
+}
+impl Reject for CustomError {}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Question {
     id: QuestionID,
@@ -19,16 +29,7 @@ struct Question {
     content: String,
     tags: Option<Vec<String>>,
 }
-impl Question {
-    fn new(id: QuestionID, title: String, content: String, tags: Option<Vec<String>>) -> Self {
-        Question {
-            id,
-            title,
-            content,
-            tags,
-        }
-    }
-}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct QuestionID(String);
 impl FromStr for QuestionID {
@@ -42,6 +43,7 @@ impl FromStr for QuestionID {
     }
 }
 
+#[derive(Clone)]
 struct Store {
     questions: HashMap<QuestionID, Question>,
 }
@@ -55,22 +57,24 @@ impl Store {
         let file = include_str!("../questions.json");
         serde_json::from_str(file).expect("Can't read file")
     }
-    fn add_question(&mut self, question: &Question) -> &Self {
-        self.questions.insert(question.id.clone(), question.clone());
-        self
-    }
+}
+
+#[derive(Debug)]
+struct Pagination {
+    start: usize,
+    end: usize,
 }
 
 async fn return_err(r: Rejection) -> Result<impl Reply, Rejection> {
-    if let Some(error) = r.find::<CorsForbidden>() {
+    if let Some(error) = r.find::<CustomError>() {
+        Ok(warp::reply::with_status(
+            error.to_string(),
+            StatusCode::RANGE_NOT_SATISFIABLE,
+        ))
+    } else if let Some(error) = r.find::<CorsForbidden>() {
         Ok(warp::reply::with_status(
             error.to_string(),
             StatusCode::FORBIDDEN,
-        ))
-    } else if let Some(InvalidID) = r.find() {
-        Ok(warp::reply::with_status(
-            "No ID provided".to_string(),
-            StatusCode::UNPROCESSABLE_ENTITY,
         ))
     } else {
         Ok(warp::reply::with_status(
@@ -80,28 +84,51 @@ async fn return_err(r: Rejection) -> Result<impl Reply, Rejection> {
     }
 }
 
-async fn get_questions() -> Result<impl Reply, Rejection> {
-    let question = Question::new(
-        QuestionID::from_str("1").expect("No ID provided"),
-        "First question".to_string(),
-        "What is warp used for?".to_string(),
-        Some(vec!["FAQ".to_string()]),
-    );
+fn extract_pagination(params: HashMap<String, String>) -> Result<Pagination, CustomError> {
+    if params.contains_key("start") && params.contains_key("end") {
+        return Ok(Pagination {
+            start: params
+                .get("start")
+                .unwrap()
+                .parse::<usize>()
+                .map_err(CustomError::ParseError)?,
+            end: params
+                .get("end")
+                .unwrap()
+                .parse::<usize>()
+                .map_err(CustomError::ParseError)?,
+        });
+    }
+    Err(CustomError::MissingParameters)
+}
 
-    match question.id.0.is_empty() {
-        true => Err(warp::reject::custom(InvalidID)),
-        false => Ok(warp::reply::json(&question)),
+async fn get_questions(
+    params: HashMap<String, String>,
+    store: Store,
+) -> Result<impl Reply, Rejection> {
+    if params.len() > 0 {
+        let pagination = extract_pagination(params)?;
+        let res: Vec<Question> = store.questions.values().cloned().collect();
+        let res = &res[pagination.start..pagination.end];
+        Ok(warp::reply::json(&res))
+    } else {
+        let res: Vec<Question> = store.questions.values().cloned().collect();
+        Ok(warp::reply::json(&res))
     }
 }
 
 #[tokio::main]
 async fn main() {
+    let store = Store::new();
+    let store_filter = warp::any().map(move || store.clone());
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(&[Method::PUT, Method::DELETE]);
     let get_items = warp::get()
         .and(warp::path("questions"))
         .and(warp::path::end())
+        .and(warp::query())
+        .and(store_filter.clone())
         .and_then(get_questions)
         .recover(return_err);
     let routes = get_items.with(cors);
