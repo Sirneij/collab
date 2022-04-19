@@ -4,6 +4,15 @@ use crate::stores;
 use crate::types;
 use warp::{http::StatusCode, Rejection, Reply};
 
+/// Handler for providing answers to a specific question. The content-type expected is `application/x-www-form-urlencoded`.
+/// returns a text `"Answer successfully added."` and HTTP `201` code if successful.
+///
+/// # Expected parameters
+/// `content` and `questionID`
+///
+/// # Example request
+/// POST requests with the following signature is expected:
+/// `/answers content="Answer content"&questionID="reference to the question being answered"`
 pub async fn add_answer(
     store: stores::Store,
     params: HashMap<String, String>,

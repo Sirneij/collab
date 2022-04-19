@@ -3,7 +3,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Store {
     pub questions: Arc<RwLock<HashMap<QuestionID, Question>>>,
     pub answers: Arc<RwLock<HashMap<String, Answer>>>,

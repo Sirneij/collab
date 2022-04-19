@@ -1,4 +1,7 @@
-use handle_errors;
+#![warn(clippy::all)]
+
+use handle_errors::return_err;
+use tracing_subscriber::fmt::format::FmtSpan;
 use warp::{http::Method, Filter};
 
 mod routes;
@@ -7,17 +10,38 @@ mod types;
 
 #[tokio::main]
 async fn main() {
+    let log_filter =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "collab=info,warp=error".to_owned());
+
     let store = stores::Store::new();
     let store_filter = warp::any().map(move || store.clone());
+
+    tracing_subscriber::fmt()
+        // Use the filter we built above to determine which traces to record.
+        .with_env_filter(log_filter)
+        // Record an event when each span closes. This can be used to time our
+        // routes' durations!
+        .with_span_events(FmtSpan::CLOSE)
+        .init();
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(&[Method::PUT, Method::DELETE]);
+
     let get_questions = warp::get()
         .and(warp::path("questions"))
         .and(warp::path::end())
         .and(warp::query())
         .and(store_filter.clone())
-        .and_then(routes::question::get_questions);
+        .and_then(routes::question::get_questions)
+        .with(warp::trace(|info| {
+            tracing::info_span!(
+                "get_questions_request",
+                method = %info.method(),
+                path = %info.path(),
+                id = %uuid::Uuid::new_v4(),
+            )
+        }));
 
     let get_question = warp::get()
         .and(warp::path("questions"))
@@ -61,7 +85,8 @@ async fn main() {
         .or(delete_question)
         .or(add_answer)
         .with(cors)
-        .recover(handle_errors::return_err);
+        .with(warp::trace::request())
+        .recover(return_err);
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
