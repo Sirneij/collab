@@ -15,4 +15,6 @@ handle-errors = { path = "handle-errors", version = "0.1.0" }
 uuid = { version = "0.8.2", features = ["v4"] }
 tracing = { version = "0.1.34", features = ["log"] }
 tracing-subscriber = { version="0.3.11", features=["fmt", "std", "env-filter"]}
+sqlx = { version = "0.5.13", features = ["postgres","migrate","runtime-tokio-rustls"] }
+
 

@@ -1,6 +1,6 @@
 #![warn(clippy::all)]
 
-use handle_errors::return_err;
+use handle_errors::return_error;
 use tracing_subscriber::fmt::format::FmtSpan;
 use warp::{http::Method, Filter};
 
@@ -13,7 +13,8 @@ async fn main() {
     let log_filter =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "collab=info,warp=error".to_owned());
 
-    let store = stores::Store::new();
+    let store =
+        stores::Store::new("postgres://quickcheck:password@localhost:5432/collab_dev").await;
     let store_filter = warp::any().map(move || store.clone());
 
     tracing_subscriber::fmt()
@@ -45,7 +46,7 @@ async fn main() {
 
     let get_question = warp::get()
         .and(warp::path("questions"))
-        .and(warp::path::param::<String>())
+        .and(warp::path::param::<i32>())
         .and(warp::path::end())
         .and(store_filter.clone())
         .and_then(routes::question::get_one_question);
@@ -59,7 +60,7 @@ async fn main() {
 
     let update_question = warp::put()
         .and(warp::path("questions"))
-        .and(warp::path::param::<String>())
+        .and(warp::path::param::<i32>())
         .and(warp::path::end())
         .and(store_filter.clone())
         .and(warp::body::json())
@@ -67,7 +68,7 @@ async fn main() {
 
     let delete_question = warp::delete()
         .and(warp::path("questions"))
-        .and(warp::path::param::<String>())
+        .and(warp::path::param::<i32>())
         .and(warp::path::end())
         .and(store_filter.clone())
         .and_then(routes::question::delete_question);
@@ -76,7 +77,7 @@ async fn main() {
         .and(warp::path("answers"))
         .and(warp::path::end())
         .and(store_filter.clone())
-        .and(warp::body::form())
+        .and(warp::body::json())
         .and_then(routes::answer::add_answer);
     let routes = get_questions
         .or(get_question)
@@ -86,7 +87,7 @@ async fn main() {
         .or(add_answer)
         .with(cors)
         .with(warp::trace::request())
-        .recover(return_err);
+        .recover(return_error);
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }

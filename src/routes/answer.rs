@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use tracing::{event, instrument, Level};
 
 use crate::stores;
 use crate::types;
@@ -13,19 +13,19 @@ use warp::{http::StatusCode, Rejection, Reply};
 /// # Example request
 /// POST requests with the following signature is expected:
 /// `/answers content="Answer content"&questionID="reference to the question being answered"`
+
+#[instrument]
 pub async fn add_answer(
     store: stores::Store,
-    params: HashMap<String, String>,
+    answer: types::answer::Answer,
 ) -> Result<impl Reply, Rejection> {
-    let answer = types::answer::Answer {
-        id: "C10001".to_string(),
-        content: params.get("content").unwrap().to_string(),
-        question_id: params.get("questionID").unwrap().to_string(),
-    };
+    event!(target: "collab", Level::INFO, "adding one answer");
 
-    store.answers.write().insert(answer.clone().id, answer);
-    Ok(warp::reply::with_status(
-        "Answer successfully added.",
-        StatusCode::CREATED,
-    ))
+    match store.add_answer(answer).await {
+        Ok(_) => Ok(warp::reply::with_status(
+            "Answer added",
+            StatusCode::CREATED,
+        )),
+        Err(e) => Err(warp::reject::custom(e)),
+    }
 }
