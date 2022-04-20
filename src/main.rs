@@ -9,12 +9,15 @@ mod stores;
 mod types;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), sqlx::Error> {
     let log_filter =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "collab=info,warp=error".to_owned());
 
     let store =
         stores::Store::new("postgres://quickcheck:password@localhost:5432/collab_dev").await;
+
+    sqlx::migrate!().run(&store.clone().connection).await?;
+
     let store_filter = warp::any().map(move || store.clone());
 
     tracing_subscriber::fmt()
@@ -88,6 +91,9 @@ async fn main() {
         .with(cors)
         .with(warp::trace::request())
         .recover(return_error);
+    let routes = warp::path("api").and(routes);
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+
+    Ok(())
 }
